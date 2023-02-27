@@ -2,15 +2,12 @@
 # deactivate
 # source /Users/johncole/Github/researchgpt-demo/researchgpt/bin/activate
 
-from flask import Flask, request, render_template
-from io import BytesIO
 from PyPDF2 import PdfReader
 import pandas as pd
 from openai.embeddings_utils import get_embedding, cosine_similarity
 import openai
-import os
-import requests
-from flask_cors import CORS
+
+path_to_pdf = "/Users/johncole/Desktop/DALL-E/30 Minute Summaries/How to Get Rich-long.pdf"
 
 def open_file(filepath):
     '''
@@ -31,9 +28,6 @@ def open_file(filepath):
 
 debug = True
 
-app = Flask(__name__)
-CORS(app)
-
 open_ai_key = open_file("openai_api.key")
 
 class Chatbot():
@@ -49,12 +43,13 @@ class Chatbot():
             page_text = []
 
             def visitor_body(text, cm, tm, fontDict, fontSize):
-                print(f"Text: {text}")
-                print(f'tm: {tm}')
+                # print(f"Text: {text}")
+                # print(f'tm: {tm}')
                 x = tm[4]
                 y = tm[5]
                 # ignore header/footer
-                if (y > 50 and y < 720) and (len(text.strip()) > 1):
+                # if (y > 50 and y < 720) and (len(text.strip()) > 1):
+                if (len(text.strip()) > 1):
                     page_text.append({
                     'fontsize': fontSize,
                     'text': text.strip().replace('\x03', ''),
@@ -89,17 +84,33 @@ class Chatbot():
                     blob_font_size = t['fontsize']
                     blob_text = t['text']
                 paper_text += processed_text
-                print(f'processed_text: {processed_text}')
+                # print(f'processed_text: {processed_text}')
         print("Done parsing paper")
-        if debug:
-            print(paper_text)
+        #if debug:
+        #    print(paper_text)
         return paper_text
 
     def paper_df(self, pdf):
-        print('Creating dataframe')
+        """
+        Creates a dataframe from a paper object.
+
+        Parameters
+        ----------
+        pdf : list
+            A list of dictionaries that contains data about the paper.
+
+        Returns
+        -------
+        df : pd.DataFrame
+            A pandas dataframe containing the paper's data.
+
+        """
         filtered_pdf= []
         for row in pdf:
             if len(row['text']) < 30:
+                print(f"Skipping row: {row['text']}")
+                print(f"Row length: {len(row['text'])}")
+                input()
                 continue
             filtered_pdf.append(row)
         df = pd.DataFrame(filtered_pdf)
@@ -112,6 +123,17 @@ class Chatbot():
         return df
 
     def calculate_embeddings(self, df):
+        """
+        Calculates text embeddings for a dataframe of text.
+        Parameters
+        ----------
+        df : Pandas dataframe
+            The dataframe to calculate text embeddings for.
+        Returns
+        -------
+        df : Pandas dataframe
+            The dataframe with the embeddings added as a column.
+        """
         print('Calculating embeddings')
         print(f'OpenAPI key: {open_ai_key}')
         openai.api_key = open_ai_key
@@ -122,6 +144,25 @@ class Chatbot():
         return df
 
     def search_embeddings(self, df, query, n=3, pprint=True):
+        """
+        Search the dataframe for the query and return the n most similar documents.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Dataframe with the documents to search
+        query : str
+            The query to search the documents
+        n : int, default=3
+            The number of results to return
+        pprint : bool, default=True
+            If True, print the results
+        
+        Returns
+        -------
+        results : pd.DataFrame
+            A dataframe with the n most similar documents
+        """
         query_embedding = get_embedding(
             query,
             engine="text-embedding-ada-002"
@@ -140,9 +181,9 @@ class Chatbot():
         return results.head(n)
     
     def create_prompt(self, df, user_input):
-        result = self.search_embeddings(df, user_input, n=3)
+        result = self.search_embeddings(df, user_input, n=5)
         print(result)
-        prompt = """You are a large language model whose expertise is reading and summarizing scientific papers. 
+        original_prompt = """You are a large language model whose expertise is reading and summarizing scientific papers. 
         You are given a query and a series of text embeddings from a paper in order of their cosine similarity to the query.
         You must take the given embeddings and return a very detailed summary of the paper that answers the query.
             
@@ -153,8 +194,24 @@ class Chatbot():
             1.""" + str(result.iloc[0]['text']) + """
             2.""" + str(result.iloc[1]['text']) + """
             3.""" + str(result.iloc[2]['text']) + """
+            4.""" + str(result.iloc[3]['text']) + """
+            5.""" + str(result.iloc[4]['text']) + """
 
             Return a detailed answer based on the paper:"""
+        
+        prompt = """You are a large language model whose expertise is reading and summarizing literature. 
+        You are given a query and a series of text embeddings from a paper in order of their cosine similarity to the query.
+        You must take the given embeddings and return a very detailed answer the query.
+            
+            Given the question: """+ user_input + """
+            
+            and the following embeddings as data: 
+            
+            1.""" + str(result.iloc[0]['text']) + """
+            2.""" + str(result.iloc[1]['text']) + """
+            3.""" + str(result.iloc[2]['text']) + """
+
+            Return a detailed answer based on the literature:"""
 
         print('Done creating prompt')
         return prompt
@@ -168,61 +225,40 @@ class Chatbot():
         response = {'answer': answer, 'sources': sources}
         return response
 
+    '''
     def reply(self, prompt):
-        print(prompt)
+        # print(prompt)
         prompt = self.create_prompt(df, prompt)
         return self.gpt(prompt)
+    '''
 
-@app.route("/", methods=["GET", "POST"])
-def index():
+def main():
     open_ai_key = open_file("openai_api.key")
     print(f'OpenApi Key: {open_ai_key}')
-    return render_template("index.html")
 
-@app.route("/process_pdf", methods=['POST'])
-def process_pdf():
+    # Load up the pdf file data.
     print("Processing pdf")
-    file = request.data
-    pdf = PdfReader(BytesIO(file))
-    # !!!
-    if debug: 
-        page = pdf.pages[0]
-        print(page.extract_text())
-
+    print("Processing pdf: " + path_to_pdf)
+    pdf = PdfReader(path_to_pdf)
+    
     chatbot = Chatbot()
-    paper_text = chatbot.parse_paper(pdf)
+    paper_text = chatbot.parse_paper(pdf)       # parses the text into some weird data structure.
     global df
-    df = chatbot.paper_df(paper_text)
-    df = chatbot.calculate_embeddings(df)
+    df = chatbot.paper_df(paper_text)           # creates a dataframe from the weird data structure.
+    df = chatbot.calculate_embeddings(df)       # calculates the embeddings for each row in the dataframe.
     print("Done processing pdf")
-    return {'key': ''}
 
-@app.route("/download_pdf", methods=['POST'])
-def download_pdf():
-    chatbot = Chatbot()
-    url = request.json['url']
-    r = requests.get(str(url))
-    print(r.headers)
-    pdf = PdfReader(BytesIO(r.content))
-    paper_text = chatbot.parse_paper(pdf)
-    global df
-    df = chatbot.paper_df(paper_text)
-    df = chatbot.calculate_embeddings(df)
-    print("Done processing pdf")
-    return {'key': ''}
+    while True:
+            chatbot = Chatbot()
+            query = input("Enter your query: ")
+            query = str(query)
+            prompt = chatbot.create_prompt(df, query)
+            response = chatbot.gpt(prompt)
+            print(response)
+            print(" # # # ")
 
-@app.route("/reply", methods=['POST'])
-def reply():
-    chatbot = Chatbot()
-    query = request.json['query']
-    query = str(query)
-    prompt = chatbot.create_prompt(df, query)
-    response = chatbot.gpt(prompt)
-    print(response)
-    return response, 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
-    print(f'OpenApi Key: {open_ai_key}')
+    main()
 
 
