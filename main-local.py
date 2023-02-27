@@ -8,9 +8,12 @@ import os
 import requests
 from flask_cors import CORS
 
+debug = True
+
 app = Flask(__name__)
 CORS(app)
 
+open_ai_key = "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"
 
 class Chatbot():
     
@@ -63,7 +66,8 @@ class Chatbot():
                     blob_text = t['text']
                 paper_text += processed_text
         print("Done parsing paper")
-        # print(paper_text)
+        if debug:
+            print(paper_text)
         return paper_text
 
     def paper_df(self, pdf):
@@ -74,7 +78,8 @@ class Chatbot():
                 continue
             filtered_pdf.append(row)
         df = pd.DataFrame(filtered_pdf)
-        # print(df.shape)
+        print('Data frame shape: ')
+        print(df.shape)
         # remove elements with identical df[text] and df[page] values
         df = df.drop_duplicates(subset=['text', 'page'], keep='first')
         df['length'] = df['text'].apply(lambda x: len(x))
@@ -83,7 +88,7 @@ class Chatbot():
 
     def calculate_embeddings(self, df):
         print('Calculating embeddings')
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        openai.api_key = open_ai_key
         embedding_model = "text-embedding-ada-002"
         embeddings = df.text.apply([lambda x: get_embedding(x, engine=embedding_model)])
         df["embeddings"] = embeddings
@@ -130,7 +135,7 @@ class Chatbot():
 
     def gpt(self, prompt):
         print('Sending request to GPT-3')
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        openai.api_key = open_ai_key
         r = openai.Completion.create(model="text-davinci-003", prompt=prompt, temperature=0.4, max_tokens=1500)
         answer = r.choices[0]['text']
         print('Done sending request to GPT-3')
@@ -151,6 +156,11 @@ def process_pdf():
     print("Processing pdf")
     file = request.data
     pdf = PdfReader(BytesIO(file))
+    # !!!
+    if debug: 
+        page = pdf.pages[0]
+        print(page.extract_text())
+
     chatbot = Chatbot()
     paper_text = chatbot.parse_paper(pdf)
     global df
@@ -185,3 +195,5 @@ def reply():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
+
+
