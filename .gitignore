@@ -1,3 +1,3 @@
-*.key
+openai_api.key
 researchgpt/bin/activate
 researchgpt/
